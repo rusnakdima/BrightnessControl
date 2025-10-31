@@ -1,0 +1,9 @@
+{
+  "name": "Brightness Control",
+  "description": "Adds a brightness control icon to the system status area with scroll functionality",
+  "uuid": "brightness-control@local",
+  "shell-version": ["40", "41", "42", "43", "44", "45", "46", "47", "48", "49"],
+  "version": 1,
+  "url": "https://github.com/rusnakdima/BrightnessMiddleDrag",
+  "settings-schema": "org.gnome.shell.extensions.brightness-middle-drag"
+}
