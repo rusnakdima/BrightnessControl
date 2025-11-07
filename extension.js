@@ -1,105 +1,80 @@
 import GObject from "gi://GObject";
-import St from "gi://St";
-import Clutter from "gi://Clutter";
 import Gio from "gi://Gio";
-
+import Clutter from "gi://Clutter";
 import * as Main from "resource:///org/gnome/shell/ui/main.js";
-import * as PanelMenu from "resource:///org/gnome/shell/ui/panelMenu.js";
-import * as PopupMenu from "resource:///org/gnome/shell/ui/popupMenu.js";
-import { Slider } from "resource:///org/gnome/shell/ui/slider.js";
-
+import * as QuickSettings from "resource:///org/gnome/shell/ui/quickSettings.js";
 import { Extension } from "resource:///org/gnome/shell/extensions/extension.js";
 
+const BUS_NAME = "org.gnome.SettingsDaemon.Power";
+const OBJECT_PATH = "/org/gnome/SettingsDaemon/Power";
+
+const BrightnessInterface = `
+<node>
+  <interface name="org.gnome.SettingsDaemon.Power.Screen">
+    <property name="Brightness" type="i" access="readwrite"/>
+  </interface>
+</node>`;
+
+const BrightnessProxy = Gio.DBusProxy.makeProxyWrapper(BrightnessInterface);
+
 const BrightnessIndicator = GObject.registerClass(
-  class BrightnessIndicator extends PanelMenu.Button {
+  class BrightnessIndicator extends QuickSettings.SystemIndicator {
     _init() {
-      super._init(0.0, "Brightness Indicator");
+      super._init();
 
-      this._icon = new St.Icon({
-        icon_name: "display-brightness-symbolic",
-        style_class: "system-status-icon",
-      });
-      this.add_child(this._icon);
+      this._indicator = this._addIndicator();
+      this._indicator.icon_name = "display-brightness-symbolic";
+      this._indicator.visible = true;
 
-      let sliderItem = new PopupMenu.PopupBaseMenuItem({ activate: false });
-      this._slider = new Slider(0);
-      this._slider.connect("notify::value", this._onSliderChanged.bind(this));
+      this._indicator.reactive = true;
 
-      sliderItem.add_child(this._slider);
-      this.menu.addMenuItem(sliderItem);
+      this._proxy = new BrightnessProxy(
+        Gio.DBus.session,
+        BUS_NAME,
+        OBJECT_PATH,
+        (proxy, error) => {
+          if (error) {
+            console.error("Failed to connect to brightness proxy:", error);
+          }
+        }
+      );
 
-      this._updateBrightness();
-
-      this.connect("scroll-event", this._onScrollEvent.bind(this));
+      this._scrollId = this._indicator.connect(
+        "scroll-event",
+        this._onScroll.bind(this)
+      );
     }
 
-    _onScrollEvent(actor, event) {
-      let direction = event.get_scroll_direction();
-      let currentValue = this._slider.value;
+    _onScroll(actor, event) {
+      const direction = event.get_scroll_direction();
 
+      let delta = 0;
       if (direction === Clutter.ScrollDirection.UP) {
-        this._slider.value = Math.min(currentValue + step, 1.0);
+        delta = 5;
       } else if (direction === Clutter.ScrollDirection.DOWN) {
-        this._slider.value = Math.max(currentValue - step, 0.0);
+        delta = -5;
+      } else {
+        return Clutter.EVENT_PROPAGATE;
       }
+
+      const currentBrightness = this._proxy.Brightness;
+      const newBrightness = Math.max(
+        0,
+        Math.min(100, currentBrightness + delta)
+      );
+      this._proxy.Brightness = newBrightness;
 
       return Clutter.EVENT_STOP;
     }
 
-    _onSliderChanged() {
-      let brightness = Math.round(this._slider.value * 100);
-      this._setBrightness(brightness);
-    }
-
-    _setBrightness(value) {
-      try {
-        let proc = Gio.Subprocess.new(
-          ["brightnessctl", "set", `${value}%`],
-          Gio.SubprocessFlags.NONE
-        );
-        proc.wait_async(null, () => {});
-      } catch (e) {
-        console.error(`Error setting brightness: ${e}`);
-      }
-    }
-
-    _updateBrightness() {
-      try {
-        let proc = Gio.Subprocess.new(
-          ["brightnessctl", "get"],
-          Gio.SubprocessFlags.STDOUT_PIPE
-        );
-
-        proc.communicate_utf8_async(null, null, (proc, res) => {
-          try {
-            let [, stdout] = proc.communicate_utf8_finish(res);
-            let current = parseInt(stdout.trim());
-
-            let maxProc = Gio.Subprocess.new(
-              ["brightnessctl", "max"],
-              Gio.SubprocessFlags.STDOUT_PIPE
-            );
-
-            maxProc.communicate_utf8_async(null, null, (maxProc, maxRes) => {
-              try {
-                let [, maxStdout] = maxProc.communicate_utf8_finish(maxRes);
-                let max = parseInt(maxStdout.trim());
-                let percentage = current / max;
-                this._slider.value = percentage;
-              } catch (e) {
-                console.error(`Error getting max brightness: ${e}`);
-              }
-            });
-          } catch (e) {
-            console.error(`Error getting current brightness: ${e}`);
-          }
-        });
-      } catch (e) {
-        console.error(`Error updating brightness: ${e}`);
-      }
-    }
-
     destroy() {
+      if (this._scrollId) {
+        this._indicator.disconnect(this._scrollId);
+        this._scrollId = null;
+      }
+      if (this._proxy) {
+        this._proxy = null;
+      }
       super.destroy();
     }
   }
@@ -108,7 +83,31 @@ const BrightnessIndicator = GObject.registerClass(
 export default class BrightnessExtension extends Extension {
   enable() {
     this._indicator = new BrightnessIndicator();
-    Main.panel.addToStatusArea(this.uuid, this._indicator);
+
+    Main.panel.statusArea.quickSettings.addExternalIndicator(this._indicator);
+
+    this._moveAfterVolume();
+  }
+
+  _moveAfterVolume() {
+    const quickSettings = Main.panel.statusArea.quickSettings;
+    const indicators = quickSettings._indicators;
+
+    let volumeIndicator = null;
+    for (let indicator of indicators.get_children()) {
+      const children = indicator.get_children();
+      for (let child of children) {
+        if (child.icon_name && child.icon_name.includes("audio-volume")) {
+          volumeIndicator = indicator;
+          break;
+        }
+      }
+      if (volumeIndicator) break;
+    }
+
+    if (volumeIndicator) {
+      indicators.set_child_above_sibling(this._indicator, volumeIndicator);
+    }
   }
 
   disable() {
