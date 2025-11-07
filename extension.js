@@ -19,22 +19,26 @@ const BrightnessIndicator = GObject.registerClass(
   class BrightnessIndicator extends QuickSettings.SystemIndicator {
     _init() {
       super._init();
-      this._BrightnessProxy =
-        Gio.DBusProxy.makeProxyWrapper(BrightnessInterface);
 
       this._indicator = this._addIndicator();
       this._indicator.icon_name = "display-brightness-symbolic";
       this._indicator.visible = true;
       this._indicator.reactive = true;
 
-      this._proxy = new _BrightnessProxy(
+      const BrightnessProxy =
+        Gio.DBusProxy.makeProxyWrapper(BrightnessInterface);
+      this._proxy = new BrightnessProxy(
         Gio.DBus.session,
         BUS_NAME,
         OBJECT_PATH,
         (proxy, error) => {
           if (error) {
             console.error("Failed to connect to brightness proxy:", error);
+            return;
           }
+
+          // Set initial brightness value
+          this._syncIndicatorVisibility();
         }
       );
 
@@ -44,7 +48,19 @@ const BrightnessIndicator = GObject.registerClass(
       );
     }
 
+    _syncIndicatorVisibility() {
+      if (this._proxy && this._proxy.g_name_owner) {
+        this._indicator.visible = true;
+      } else {
+        this._indicator.visible = false;
+      }
+    }
+
     _onScroll(actor, event) {
+      if (!this._proxy || !this._proxy.g_name_owner) {
+        return Clutter.EVENT_PROPAGATE;
+      }
+
       const direction = event.get_scroll_direction();
 
       let delta = 0;
@@ -56,12 +72,19 @@ const BrightnessIndicator = GObject.registerClass(
         return Clutter.EVENT_PROPAGATE;
       }
 
+      if (this._proxy.Brightness === undefined) {
+        return Clutter.EVENT_PROPAGATE;
+      }
+
       const currentBrightness = this._proxy.Brightness;
       const newBrightness = Math.max(
         0,
         Math.min(100, currentBrightness + delta)
       );
-      this._proxy.Brightness = newBrightness;
+
+      if (newBrightness !== currentBrightness) {
+        this._proxy.Brightness = newBrightness;
+      }
 
       return Clutter.EVENT_STOP;
     }
