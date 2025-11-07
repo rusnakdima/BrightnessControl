@@ -15,20 +15,19 @@ const BrightnessInterface = `
   </interface>
 </node>`;
 
-const BrightnessProxy = Gio.DBusProxy.makeProxyWrapper(BrightnessInterface);
-
 const BrightnessIndicator = GObject.registerClass(
   class BrightnessIndicator extends QuickSettings.SystemIndicator {
     _init() {
       super._init();
+      this._BrightnessProxy =
+        Gio.DBusProxy.makeProxyWrapper(BrightnessInterface);
 
       this._indicator = this._addIndicator();
       this._indicator.icon_name = "display-brightness-symbolic";
       this._indicator.visible = true;
-
       this._indicator.reactive = true;
 
-      this._proxy = new BrightnessProxy(
+      this._proxy = new _BrightnessProxy(
         Gio.DBus.session,
         BUS_NAME,
         OBJECT_PATH,

@@ -3,7 +3,6 @@
   "description": "Adds a brightness indicator to Quick Settings with scroll wheel support",
   "uuid": "brightness-control@rusnakdima.github.com",
   "shell-version": ["45", "46", "47", "48", "49"],
-  "version": 1,
-  "url": "https://github.com/rusnakdima/BrightnessControl",
-  "settings-schema": "org.gnome.shell.extensions.brightness-control"
+  "version": 2,
+  "url": "https://github.com/rusnakdima/BrightnessControl"
 }
