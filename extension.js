@@ -1,9 +1,11 @@
 import GObject from "gi://GObject";
 import Gio from "gi://Gio";
 import Clutter from "gi://Clutter";
+import GLib from "gi://GLib";
 import * as Main from "resource:///org/gnome/shell/ui/main.js";
 import * as QuickSettings from "resource:///org/gnome/shell/ui/quickSettings.js";
 import { Extension } from "resource:///org/gnome/shell/extensions/extension.js";
+import { OsdWindow } from "resource:///org/gnome/shell/ui/osdWindow.js";
 
 const BUS_NAME = "org.gnome.SettingsDaemon.Power";
 const OBJECT_PATH = "/org/gnome/SettingsDaemon/Power";
@@ -37,10 +39,12 @@ const BrightnessIndicator = GObject.registerClass(
             return;
           }
 
-          // Set initial brightness value
           this._syncIndicatorVisibility();
         }
       );
+
+      this._osdWindow = null;
+      this._osdTimeoutId = null;
 
       this._scrollId = this._indicator.connect(
         "scroll-event",
@@ -53,6 +57,49 @@ const BrightnessIndicator = GObject.registerClass(
         this._indicator.visible = true;
       } else {
         this._indicator.visible = false;
+      }
+    }
+
+    _showBrightnessOSD(brightness) {
+      if (this._osdTimeoutId) {
+        GLib.source_remove(this._osdTimeoutId);
+        this._osdTimeoutId = null;
+      }
+
+      if (!this._osdWindow) {
+        const monitorIndex = Main.layoutManager.focusMonitor.index || 0;
+        this._osdWindow = new OsdWindow(monitorIndex);
+
+        const icon = Gio.icon_new_for_string("display-brightness-symbolic");
+
+        this._osdWindow.setIcon(icon);
+        this._osdWindow.setLevel(brightness / 100);
+        this._osdWindow.setLabel(`${brightness}%`);
+
+        this._osdWindow.show();
+      } else {
+        this._osdWindow.setLevel(brightness / 100);
+        this._osdWindow.setLabel(`${brightness}%`);
+
+        this._osdWindow.show();
+      }
+
+      this._osdTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 1500, () => {
+        this._hideBrightnessOSD();
+        this._osdTimeoutId = null;
+        return GLib.SOURCE_REMOVE;
+      });
+    }
+
+    _hideBrightnessOSD() {
+      if (this._osdTimeoutId) {
+        GLib.source_remove(this._osdTimeoutId);
+        this._osdTimeoutId = null;
+      }
+
+      if (this._osdWindow) {
+        this._osdWindow.cancel();
+        this._osdWindow = null;
       }
     }
 
@@ -84,12 +131,16 @@ const BrightnessIndicator = GObject.registerClass(
 
       if (newBrightness !== currentBrightness) {
         this._proxy.Brightness = newBrightness;
+
+        this._showBrightnessOSD(newBrightness);
       }
 
       return Clutter.EVENT_STOP;
     }
 
     destroy() {
+      this._hideBrightnessOSD();
+
       if (this._scrollId) {
         this._indicator.disconnect(this._scrollId);
         this._scrollId = null;
@@ -134,6 +185,7 @@ export default class BrightnessExtension extends Extension {
 
   disable() {
     if (this._indicator) {
+      this._indicator._hideBrightnessOSD();
       this._indicator.destroy();
       this._indicator = null;
     }
