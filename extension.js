@@ -47,28 +47,19 @@ const BrightnessIndicator = GObject.registerClass(
         return Clutter.EVENT_PROPAGATE;
       }
 
-      try {
-        const before =
-          Main.brightnessManager.globalScale.value ??
-          Main.brightnessManager.globalScale;
+      const before =
+        Main.brightnessManager.globalScale.value ??
+        Main.brightnessManager.globalScale;
 
-        if (typeof Main.brightnessManager.changeBrightness === "function") {
-          Main.brightnessManager.changeBrightness(delta);
+      const current = before;
+      const newValue = Math.max(0, Math.min(1, current + delta));
+
+      if (Math.abs(newValue - current) > 0.001) {
+        if (Main.brightnessManager.globalScale.value !== undefined) {
+          Main.brightnessManager.globalScale.value = newValue;
         } else {
-          const current = before;
-          const newValue = Math.max(0, Math.min(1, current + delta));
-
-          if (Math.abs(newValue - current) > 0.001) {
-            if (Main.brightnessManager.globalScale.value !== undefined) {
-              Main.brightnessManager.globalScale.value = newValue;
-            } else {
-              Main.brightnessManager.globalScale = newValue;
-            }
-          }
+          Main.brightnessManager.globalScale = newValue;
         }
-      } catch (e) {
-        console.error("[Brightness Control] Error adjusting brightness:", e);
-        return Clutter.EVENT_PROPAGATE;
       }
 
       return Clutter.EVENT_STOP;
