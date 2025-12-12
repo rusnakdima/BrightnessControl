@@ -14,7 +14,7 @@ A GNOME Shell extension that adds a brightness indicator to Quick Settings with 
 
 ### From GNOME Extensions Website
 
-1. Visit [the extension page](https://extensions.gnome.org/extension/your-extension-id/)
+1. Visit [the extension page](https://extensions.gnome.org/extension/8781/brightness-control/)
 2. Toggle the switch to ON to install the extension
 3. The brightness control will appear in your Quick Settings panel
 
@@ -40,7 +40,11 @@ A GNOME Shell extension that adds a brightness indicator to Quick Settings with 
 
 ## Compatibility
 
-- GNOME Shell versions: 45, 46, 47, 48, 49
+| Extension Version | GNOME Shell Version |
+| ----------------- | ------------------- |
+| 1 - 5             | 45, 46, 47, 48      |
+| 6                 | 49                  |
+
 - Works with any display that supports the GNOME Settings Daemon brightness controls
 
 ## Troubleshooting
