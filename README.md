@@ -43,7 +43,8 @@ A GNOME Shell extension that adds a brightness indicator to Quick Settings with 
 | Extension Version | GNOME Shell Version |
 | ----------------- | ------------------- |
 | 1 - 5             | 45, 46, 47, 48      |
-| 6                 | 49                  |
+| 6 - 7             | 49                  |
+| 8                 | 49, 50              |
 
 - Works with any display that supports the GNOME Settings Daemon brightness controls
 

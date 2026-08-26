@@ -4,62 +4,73 @@ import * as Main from "resource:///org/gnome/shell/ui/main.js";
 import * as QuickSettings from "resource:///org/gnome/shell/ui/quickSettings.js";
 import { Extension } from "resource:///org/gnome/shell/extensions/extension.js";
 
-const BRIGHTNESS_STEP = 0.02;
+// Accumulated smooth-scroll delta needed before we take one brightness step.
+const SMOOTH_SCROLL_THRESHOLD = 1.0;
 
 const BrightnessIndicator = GObject.registerClass(
   class BrightnessIndicator extends QuickSettings.SystemIndicator {
     _init() {
       super._init();
 
+      this._smoothDelta = 0;
+
       this._indicator = this._addIndicator();
       this._indicator.icon_name = "display-brightness-symbolic";
+      this._indicator.reactive = true;
       this._indicator.visible = false;
 
-      if (Main.brightnessManager) {
-        this._indicator.visible = true;
-        this._indicator.reactive = true;
-
-        this._scrollId = this._indicator.connect(
-          "scroll-event",
-          this._onScroll.bind(this)
-        );
-      } else {
+      const manager = Main.brightnessManager;
+      if (!manager) {
         console.warn("[Brightness Control] brightnessManager not available");
+        return;
       }
+
+      this._scrollId = this._indicator.connect(
+        "scroll-event",
+        this._onScroll.bind(this)
+      );
+
+      // globalScale is null while no backlight-capable monitor is active,
+      // and comes and goes as monitors are plugged in or out.
+      this._changedId = manager.connect("changed", () => this._sync());
+      this._sync();
+    }
+
+    _sync() {
+      this._indicator.visible = !!Main.brightnessManager?.globalScale;
     }
 
     _onScroll(actor, event) {
-      if (!Main.brightnessManager) {
+      const scale = Main.brightnessManager?.globalScale;
+      if (!scale) {
         return Clutter.EVENT_PROPAGATE;
       }
 
-      const direction = event.get_scroll_direction();
+      switch (event.get_scroll_direction()) {
+        case Clutter.ScrollDirection.UP:
+          scale.stepUp();
+          break;
 
-      let delta = 0;
-      if (direction === Clutter.ScrollDirection.UP) {
-        delta = BRIGHTNESS_STEP;
-      } else if (direction === Clutter.ScrollDirection.DOWN) {
-        delta = -BRIGHTNESS_STEP;
-      } else if (direction === Clutter.ScrollDirection.SMOOTH) {
-        const [, scrollDelta] = event.get_scroll_delta();
-        delta = -scrollDelta * BRIGHTNESS_STEP;
-      } else {
-        return Clutter.EVENT_PROPAGATE;
-      }
+        case Clutter.ScrollDirection.DOWN:
+          scale.stepDown();
+          break;
 
-      const before =
-        Main.brightnessManager.globalScale.value ??
-        Main.brightnessManager.globalScale;
-
-      const current = before;
-      const newValue = Math.max(0, Math.min(1, current + delta));
-
-      if (Math.abs(newValue - current) > 0.001) {
-        if (Main.brightnessManager.globalScale.value !== undefined) {
-          Main.brightnessManager.globalScale.value = newValue;
-        } else {
-          Main.brightnessManager.globalScale = newValue;
+        case Clutter.ScrollDirection.SMOOTH: {
+          const [, dy] = event.get_scroll_delta();
+          this._smoothDelta += dy;
+          while (this._smoothDelta <= -SMOOTH_SCROLL_THRESHOLD) {
+            this._smoothDelta += SMOOTH_SCROLL_THRESHOLD;
+            scale.stepUp();
+          }
+          while (this._smoothDelta >= SMOOTH_SCROLL_THRESHOLD) {
+            this._smoothDelta -= SMOOTH_SCROLL_THRESHOLD;
+            scale.stepDown();
+          }
+          break;
         }
+
+        default:
+          return Clutter.EVENT_PROPAGATE;
       }
 
       return Clutter.EVENT_STOP;
@@ -69,6 +80,10 @@ const BrightnessIndicator = GObject.registerClass(
       if (this._scrollId) {
         this._indicator.disconnect(this._scrollId);
         this._scrollId = null;
+      }
+      if (this._changedId) {
+        Main.brightnessManager?.disconnect(this._changedId);
+        this._changedId = null;
       }
       super.destroy();
     }
@@ -85,23 +100,22 @@ export default class BrightnessExtension extends Extension {
   }
 
   _moveAfterVolume() {
-    const quickSettings = Main.panel.statusArea.quickSettings;
-    const indicators = quickSettings._indicators;
-
-    let volumeIndicator = null;
-    for (let indicator of indicators.get_children()) {
-      const children = indicator.get_children();
-      for (let child of children) {
-        if (child.icon_name && child.icon_name.includes("audio-volume")) {
-          volumeIndicator = indicator;
-          break;
-        }
-      }
-      if (volumeIndicator) break;
+    const indicators = Main.panel.statusArea.quickSettings?._indicators;
+    if (!indicators) {
+      return;
     }
 
-    if (volumeIndicator) {
-      indicators.set_child_above_sibling(this._indicator, volumeIndicator);
+    for (const indicator of indicators.get_children()) {
+      if (indicator === this._indicator) {
+        continue;
+      }
+      const isVolume = indicator
+        .get_children()
+        .some((child) => child.icon_name?.includes("audio-volume"));
+      if (isVolume) {
+        indicators.set_child_above_sibling(this._indicator, indicator);
+        return;
+      }
     }
   }
 
